@@ -1,0 +1,110 @@
+#########################################################################################
+### Print Start Macro
+#########################################################################################
+
+[gcode_macro PRINT_START]
+gcode:
+  {% set BED = params.BED_TEMP|default(60)|float %}
+  {% set EXTRUDER = params.EXTRUDER_TEMP|default(190)|float %}
+  G28 #Home the printer
+  M140 S{BED}  ;Set bed temperature
+  M104 S{EXTRUDER} #set extruder temperature
+  G90  ;Set to absolute positioning
+  BED_MESH_CALIBRATE ADAPTIVE=1 ADAPTIVE_MARGIN=5
+  Smart_Park
+  M190 S{BED}  ;Set bed temperature and wait
+  M109 S{EXTRUDER}  ;Set extruder temperature and wait
+
+#########################################################################################
+###Print End Macro
+#########################################################################################
+
+#[gcode_macro PRINT_END]
+#gcode:
+  #M400  ;Clear buffer
+  #G1 E-3 F1800  ;Retract filament
+  #M140 S0 #turn off bed
+  #M104 S0 #turn off extruder
+  #G91 #relative positioning
+  #G1 X20 Y20 E-3 F300  # Move nozzle away from print while retracting
+  #G1 Z10 F3000 # Raise nozzle by 10mm
+  #M84  # Disable steppers
+
+#########################################################################################
+###Pause Resume Macro
+#########################################################################################
+
+[pause_resume]
+
+#########################################################################################
+###M600 Filament Change Macro
+#########################################################################################
+
+[gcode_macro M600]
+gcode:
+    {% set X = params.X|default(50)|float %}
+    {% set Y = params.Y|default(0)|float %}
+    {% set Z = params.Z|default(10)|float %}
+    SAVE_GCODE_STATE NAME=M600_state
+    PAUSE
+    G91
+    G1 E-.8 F2700
+    G1 Z{Z}
+    G90
+    G1 X{X} Y{Y} F3000
+    G91
+    G1 E-50 F1000
+    RESTORE_GCODE_STATE NAME=M600_state
+
+#########################################################################################
+###Print End Macro v2
+#########################################################################################
+
+[gcode_macro PRINT_END]
+gcode:
+        #Get Printer built volume dimensions
+        {% set X_MAX = printer.toolhead.axis_maximum.x|default(100)|float %}
+        {% set Y_MAX = printer.toolhead.axis_maximum.y|default(100)|float %}
+
+        #Fix-up extruder
+        G91                                            
+        G1 E-2 F2700                                    
+        G1 E-1.5 Z0.2 F2400                        
+        G1 X5 Y5 F6000                               
+        G1 Z10                                     
+        G90                                        
+
+        #Present print
+        G1 Z{printer.toolhead.position.z + 10} F600
+        G1 X{X_MAX / 2} Y{Y_MAX} F6000
+        M106 S0                                      
+        M104 S0                                       
+        M140 S0                                 
+
+        #Disable Steppers
+        M84 X Y E          
+
+#########################################################################################
+###Cancel Print Macro
+#########################################################################################
+
+[gcode_macro CANCEL_PRINT]
+rename_existing: BASE_CANCEL_PRINT
+gcode:
+  M400 ; wait for buffer to clear
+  G92 E0 ; zero the extruder
+  {% if printer[printer.toolhead.extruder].target > 220 %}
+      G1 E-5.0 F3600 ; retract filament PETG
+  {% else %}
+      G1 E-1.0 F3600 ; retract filament PLA
+  {% endif %}
+  TURN_OFF_HEATERS
+  CLEAR_PAUSE
+  SDCARD_RESET_FILE
+  G91 ; relative positioning
+  G0 Z1.00 X20.0 Y20.0 F20000 ; move nozzle to remove stringing
+  TURN_OFF_HEATERS
+  M107 ; turn off fan
+  G1 Z4 F3000 ; move nozzle up 2mm
+  G90 ; absolute positioning
+  G0 X190 Y190 F3600 ; park nozzle at rear
